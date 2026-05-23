@@ -88,6 +88,20 @@ docker compose up --build
 
 The compose setup uses a shared `cache`, `logs`, and `data` volume so the scanner service can write state and the web service can read it.
 
+## Production deployment
+
+A production deployment can use `docker-compose.prod.yml` with restart policies and detached mode. The separate `web` and `scanner` services share `cache`, `logs`, and `data` directories for live state sync.
+
+For a systemd-managed deployment, use `deploy/apex_scanner.service` and update the `WorkingDirectory` path to your cloned repo.
+
+Copy the example environment file before running:
+
+```bash
+cp scanner/.env.example scanner/.env
+```
+
+Then configure any API keys or settings in `scanner/.env`.
+
 ## Tests
 
 Install dev dependencies and run the test suite:

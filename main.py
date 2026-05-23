@@ -189,12 +189,16 @@ def cmd_regime(_args) -> None:
 
 
 def cmd_dashboard(args) -> None:
-    # Start background scanner according to requested mode. Default: separate process.
-    use_process = not getattr(args, "foreground", False)
-    init_scanner_daemon(use_process=use_process)
+    # Start a background scanner unless explicitly disabled.
+    if not getattr(args, "no_scanner", False):
+        use_process = not getattr(args, "foreground", False)
+        init_scanner_daemon(use_process=use_process)
+        console.print(f"[dim]  Background scanner process is running in parallel.[/dim]\n")
+    else:
+        console.print(f"[dim]  Dashboard starting without a local scanner. Use a separate scanner service or refresh cache manually.[/dim]\n")
+
     port = args.port if getattr(args, "port", None) else find_free_port(8000)
     console.print(f"[dim]  Web dashboard starting on http://localhost:{port}[/dim]\n")
-    console.print(f"[dim]  Background scanner process is running in parallel.[/dim]\n")
     web_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 
@@ -237,6 +241,8 @@ def main() -> None:
                         help="Dashboard port (default: first free port starting at 8000)")
     p_dash.add_argument("--foreground", action="store_true",
                         help="Run background scanner in-process (thread) so logs are visible in this terminal")
+    p_dash.add_argument("--no-scanner", action="store_true",
+                        help="Start the web dashboard without launching a background scanner")
     p_dash.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()

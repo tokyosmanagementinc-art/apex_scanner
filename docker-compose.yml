@@ -1,0 +1,26 @@
+version: '3.9'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python main.py dashboard --port 8000 --no-scanner
+
+  scanner:
+    build: .
+    volumes:
+      - ./:/app
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python main.py scan --loop

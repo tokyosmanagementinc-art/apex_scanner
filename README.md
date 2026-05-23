@@ -65,3 +65,25 @@ python main.py backtest
 - The dashboard uses cached scan state from the background scanner.
 - The default dashboard server is Flask and runs on `0.0.0.0`.
 - `--foreground` is useful for debugging since it runs the scanner thread in the same process.
+
+## Docker
+
+Build the image:
+
+```bash
+docker build -t apex_scanner .
+```
+
+Run the dashboard container:
+
+```bash
+docker run --rm -p 8000:8000 -v "$PWD/cache":/app/cache -v "$PWD/logs":/app/logs -v "$PWD/data":/app/data apex_scanner
+```
+
+Run both the web dashboard and scanner in Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The compose setup uses a shared `cache`, `logs`, and `data` volume so the scanner service can write state and the web service can read it.

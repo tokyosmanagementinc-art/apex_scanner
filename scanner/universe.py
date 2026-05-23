@@ -679,23 +679,23 @@ def _download_quote_info_batch(symbols: List[str], cfg=CONFIG, cancel_event: Opt
                 return info_map
             params = {"symbols": ",".join(batch)}
             r = session.get(url, params=params, headers=headers, timeout=15)
-        if r.status_code != 200:
-            raise Exception(f"Yahoo quote API HTTP {r.status_code}")
+            if r.status_code != 200:
+                raise Exception(f"Yahoo quote API HTTP {r.status_code}")
 
-        data = r.json()
-        quotes = (data.get("quoteResponse", {})
-                      .get("result", []))
-        for q in quotes:
-            sym = q.get("symbol")
-            if not sym:
-                continue
-            market_cap = q.get("marketCap") or 0.0
-            float_shares = q.get("sharesOutstanding") or 0.0
-            info_map[sym] = {
-                "market_cap": float(market_cap) if market_cap else 0.0,
-                "float_shares": float(float_shares) if float_shares else 0.0,
-            }
-        time.sleep(cfg.YF_INFO_DELAY)
+            data = r.json()
+            quotes = (data.get("quoteResponse", {})
+                          .get("result", []))
+            for q in quotes:
+                sym = q.get("symbol")
+                if not sym:
+                    continue
+                market_cap = q.get("marketCap") or 0.0
+                float_shares = q.get("sharesOutstanding") or 0.0
+                info_map[sym] = {
+                    "market_cap": float(market_cap) if market_cap else 0.0,
+                    "float_shares": float(float_shares) if float_shares else 0.0,
+                }
+            time.sleep(cfg.YF_INFO_DELAY)
 
     return info_map
 

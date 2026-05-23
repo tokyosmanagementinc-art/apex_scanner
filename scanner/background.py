@@ -294,4 +294,3 @@ def start_background_scanner_thread() -> None:
     _SCAN_THREAD = threading.Thread(target=background_scan_loop, daemon=True)
     _SCAN_THREAD.start()
     logger.info(f"Background scanner thread started: name={_SCAN_THREAD.name}")
-    logger.info(f"Background scanner process started: pid={_SCAN_PROCESS.pid}")

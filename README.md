@@ -87,3 +87,14 @@ docker compose up --build
 ```
 
 The compose setup uses a shared `cache`, `logs`, and `data` volume so the scanner service can write state and the web service can read it.
+
+## Tests
+
+Install dev dependencies and run the test suite:
+
+```bash
+python -m pip install -r requirements-dev.txt
+pytest -q
+```
+
+The project also includes a GitHub Actions workflow at `.github/workflows/ci.yml` that installs dependencies and runs the tests on push.

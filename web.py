@@ -49,7 +49,7 @@ def index():
     session = _selected_session()
     state = _public_state(get_cached_state(session))
     return render_template(
-        "index.html",
+        "dashboard.html",
         state=state,
         state_json=state,
         config=CONFIG,

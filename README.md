@@ -63,6 +63,7 @@ python main.py backtest
 ## Notes
 
 - The dashboard uses cached scan state from the background scanner.
+- The scanner now uses penny-stock-focused filters by default: low price, higher minimum volume, stronger rel-vol, and positive gap activity.
 - The default dashboard server is Flask and runs on `0.0.0.0`.
 - `--foreground` is useful for debugging since it runs the scanner thread in the same process.
 

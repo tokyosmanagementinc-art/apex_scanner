@@ -865,13 +865,14 @@ def stage2_filter(stocks: List[UniverseStock], market_session: str = "regular", 
         s.rel_volume = s.volume / s.avg_volume if s.avg_volume else 0.0
 
     min_rel = cfg.MIN_REL_VOLUME_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_REL_VOLUME
+    min_gap = cfg.MIN_GAP_PCT_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_GAP_PCT
     max_stage2 = cfg.MAX_STAGE2_PASS_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MAX_STAGE2_PASS
     min_market_cap = cfg.MIN_MARKET_CAP_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_MARKET_CAP
 
-    active = [s for s in stocks if s.rel_volume >= min_rel]
+    active = [s for s in stocks if s.rel_volume >= min_rel and s.gap_pct >= min_gap]
     active.sort(key=lambda x: x.rel_volume, reverse=True)
 
-    logger.info(f"[Stage2] {len(active)} symbols passed rel-vol pre-filter for session={market_session}")
+    logger.info(f"[Stage2] {len(active)} symbols passed rel-vol and gap filters for session={market_session}")
     to_enrich = active[: max(max_stage2 * 2, max_stage2)]
 
     # Enrich only the most promising candidates with market cap / float.
@@ -899,8 +900,10 @@ class UniverseStats:
     screener_count: int = 0
     stage1_total: int = 0
     stage1_passed: int = 0
+    stage1_rejected: int = 0
     stage1_symbols: List[str] = field(default_factory=list)
     stage2_passed: int = 0
+    stage2_filtered: int = 0
     stage2_symbols: List[str] = field(default_factory=list)
     stage3_total: int = 0
     stage3_symbols: List[str] = field(default_factory=list)
@@ -938,6 +941,10 @@ def discover_universe(force_refresh: bool = False, market_session: str = "regula
     # 3. Stage 1 cheap filter
     stage1 = stage1_filter(combined, market_session=market_session, cfg=CONFIG, cancel_event=cancel_event)
     stats.stage1_passed = len(stage1)
+    stats.stage1_rejected = max(0, stats.stage1_total - stats.stage1_passed)
+    name_map = dict(zip(full_df["symbol"], full_df["name"]))
+    for s in stage1:
+        s.name = name_map.get(s.symbol, "")
     max_stage1 = CONFIG.MAX_STAGE1_PASS_EXTENDED if market_session in ("pre-market", "after-hours") else CONFIG.MAX_STAGE1_PASS
     stats.stage1_symbols = [s.symbol for s in stage1[:max_stage1]]
     stage1 = stage1[:max_stage1]
@@ -945,6 +952,7 @@ def discover_universe(force_refresh: bool = False, market_session: str = "regula
     # 4. Stage 2 activity filter
     stage2 = stage2_filter(stage1, market_session=market_session, cfg=CONFIG, cancel_event=cancel_event)
     stats.stage2_passed = len(stage2)
+    stats.stage2_filtered = max(0, stats.stage1_passed - stats.stage2_passed)
     stats.stage2_symbols = [s.symbol for s in stage2]
 
     return stage2, stats

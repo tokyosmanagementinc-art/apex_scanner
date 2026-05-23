@@ -36,6 +36,8 @@ def _default_state(session: str) -> dict:
         "phase_message": "Background scanner is waiting to run.",
         "progress": {"current": 0, "total": 0},
         "last_scan": None,
+        "scan_started_at": None,
+        "elapsed_seconds": None,
         "last_duration": None,
         "last_updated": _iso_now(),
         "next_run_in": None,
@@ -46,6 +48,17 @@ def _default_state(session: str) -> dict:
         "logs": [],
         "freshness_seconds": None,
     }
+
+
+def _compute_elapsed(state: dict) -> Optional[int]:
+    started_at = state.get("scan_started_at")
+    if not started_at:
+        return None
+    try:
+        start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        return max(0, int((datetime.utcnow() - start).total_seconds()))
+    except Exception:
+        return None
 
 
 def _load_cache() -> Dict[str, dict]:
@@ -92,6 +105,12 @@ def _update_state(session: str, updates: dict) -> None:
                 state["freshness_seconds"] = None
         else:
             state["freshness_seconds"] = None
+
+        if state.get("running"):
+            state["elapsed_seconds"] = _compute_elapsed(state)
+        elif state.get("scan_started_at") and state.get("last_duration") is None:
+            state["elapsed_seconds"] = _compute_elapsed(state)
+
         _save_cache()
 
 
@@ -174,6 +193,9 @@ def _run_scan(session: str) -> None:
         "phase": "Discovering universe",
         "phase_message": f"Running background scan for {session} session.",
         "progress": {"current": 0, "total": 0},
+        "scan_started_at": _iso_now(),
+        "elapsed_seconds": 0,
+        "last_duration": None,
     })
     _append_log(session, f"Background scan started for {session}.")
 
@@ -201,6 +223,7 @@ def _run_scan(session: str) -> None:
                 progress_callback=progress_callback,
                 stage_callback=stage_callback,
             )
+            completed_duration = _compute_elapsed(SESSION_CACHE[session]) if SESSION_CACHE[session].get("scan_started_at") else None
             _update_state(session, {
                 "status": "Ready",
                 "running": False,
@@ -210,7 +233,8 @@ def _run_scan(session: str) -> None:
                 "regime": _serialize_regime(regime),
                 "stats": _serialize_stats(stats),
                 "last_scan": _iso_now(),
-                "last_duration": round(stats.stage3_total if stats else 0, 2),
+                "elapsed_seconds": completed_duration,
+                "last_duration": completed_duration,
                 "error": None,
             })
             _append_log(session, f"Background scan completed for {session}.")

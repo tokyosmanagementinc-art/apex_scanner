@@ -13,10 +13,12 @@ SESSION_TYPES = ("regular", "pre-market", "after-hours")
 CACHE_KEY = "apex_scan_cache_v1"
 CACHE_TTL = 86_400
 
-_SCAN_CACHE_LOCK = threading.Lock()
+_SCAN_CACHE_LOCK = threading.RLock()
 _SCAN_LOCK = threading.Lock()
 _SCAN_PROCESS: Optional[multiprocessing.Process] = None
 _SCAN_PROCESS_STARTED = False
+_SCAN_THREAD_STARTED = False
+_SCAN_THREAD: Optional[threading.Thread] = None
 
 SESSION_CACHE: Dict[str, dict] = {}
 

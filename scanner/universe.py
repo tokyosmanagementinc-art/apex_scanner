@@ -471,6 +471,9 @@ def _download_batch_quotes(symbols: List[str], market_session: str = "regular") 
     if not symbols:
         return {}, []
 
+    results: Dict[str, dict] = {}
+    failed: List[str] = symbols[:]
+
     try:
         results, failed = _download_batch_quotes_yahoo_api(symbols, market_session=market_session)
         if failed:

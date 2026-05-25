@@ -62,16 +62,40 @@ class MarketRegime:
 
 # ── Data fetching ──────────────────────────────────────────────────────────────
 
+def _normalize_column_name(col: object) -> object:
+    if isinstance(col, tuple):
+        return col[0]
+    if isinstance(col, str):
+        if col.startswith("('") or col.startswith('(\"'):
+            try:
+                inner = col[1:-1]
+                first_part = inner.split(",", 1)[0].strip()
+                return first_part.strip("'\"")
+            except Exception:
+                return col
+    return col
+
+
+def _normalize_df_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(1)
+    else:
+        df.columns = [_normalize_column_name(col) for col in df.columns]
+    return df
+
+
 def _fetch_ohlcv(ticker: str, period: str = "6mo") -> Optional[pd.DataFrame]:
     cache_key = f"regime_{ticker}_{period}"
     cached = CACHE.get(cache_key)
     if cached:
-        return pd.DataFrame(cached)
+        df = pd.DataFrame(cached)
+        return _normalize_df_columns(df)
     try:
         df = yf.download(ticker, period=period, interval="1d",
                          auto_adjust=True, progress=False, threads=False)
         if df is None or df.empty:
             return None
+        df = _normalize_df_columns(df)
         CACHE.set(cache_key, df.reset_index().to_dict("records"), ttl=900)
         return df
     except Exception as e:

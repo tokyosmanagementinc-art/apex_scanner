@@ -458,6 +458,54 @@ def _download_batch_quotes_alpha_vantage(symbols: List[str]) -> Tuple[Dict[str, 
     return results, failed
 
 
+# ── Filter threshold selector ──────────────────────────────────────────────────
+
+def _get_filter_thresholds(market_session: str = "regular", setup_type: str = "day", cfg=CONFIG):
+    """
+    Select appropriate filter thresholds based on market session and setup type.
+    setup_type: "day" (day trade) or "swing" (swing trade, 3-5 days)
+    market_session: "regular", "pre-market", or "after-hours"
+    Returns a dict with all threshold values.
+    """
+    is_extended = market_session in ("pre-market", "after-hours")
+    is_day = setup_type == "day"
+
+    if is_extended:
+        if is_day:
+            return {
+                "min_volume": cfg.MIN_VOLUME_DAY_EXTENDED,
+                "min_rel_volume": cfg.MIN_REL_VOLUME_DAY_EXTENDED,
+                "min_gap_pct": cfg.MIN_GAP_PCT_DAY_EXTENDED,
+                "min_market_cap": cfg.MIN_MARKET_CAP_DAY_EXTENDED,
+                "min_change_pct": cfg.MIN_CHANGE_PCT_DAY_EXTENDED,
+            }
+        else:
+            return {
+                "min_volume": cfg.MIN_VOLUME_SWING_EXTENDED,
+                "min_rel_volume": cfg.MIN_REL_VOLUME_SWING_EXTENDED,
+                "min_gap_pct": cfg.MIN_GAP_PCT_SWING_EXTENDED,
+                "min_market_cap": cfg.MIN_MARKET_CAP_SWING_EXTENDED,
+                "min_change_pct": cfg.MIN_CHANGE_PCT_SWING_EXTENDED,
+            }
+    else:
+        if is_day:
+            return {
+                "min_volume": cfg.MIN_VOLUME_DAY,
+                "min_rel_volume": cfg.MIN_REL_VOLUME_DAY,
+                "min_gap_pct": cfg.MIN_GAP_PCT_DAY,
+                "min_market_cap": cfg.MIN_MARKET_CAP_DAY,
+                "min_change_pct": cfg.MIN_CHANGE_PCT_DAY,
+            }
+        else:
+            return {
+                "min_volume": cfg.MIN_VOLUME_SWING,
+                "min_rel_volume": cfg.MIN_REL_VOLUME_SWING,
+                "min_gap_pct": cfg.MIN_GAP_PCT_SWING,
+                "min_market_cap": cfg.MIN_MARKET_CAP_SWING,
+                "min_change_pct": cfg.MIN_CHANGE_PCT_SWING,
+            }
+
+
 # ── Stage 1: Cheap batch filter ────────────────────────────────────────────────
 
 @retry(max_tries=3, delay=2.5, backoff=2.0, exceptions=(Exception,))
@@ -563,14 +611,15 @@ def _download_batch_quotes(symbols: List[str], market_session: str = "regular") 
     return results, failed
 
 
-def stage1_filter(symbols: List[str], market_session: str = "regular", cfg=CONFIG, cancel_event: Optional[threading.Event] = None) -> List[UniverseStock]:
+def stage1_filter(symbols: List[str], market_session: str = "regular", setup_type: str = "day", cfg=CONFIG, cancel_event: Optional[threading.Event] = None) -> List[UniverseStock]:
     """
     Apply cheap filters: price, volume, rough market-cap proxy.
     Uses smaller yfinance batch downloads with retry loops to avoid rate limits.
     Supports session-specific quote selection for regular, pre-market, and after-hours.
+    Also supports setup_type: "day" or "swing" for different filter thresholds.
     Returns a list of UniverseStock objects that pass.
     """
-    logger.info(f"[Stage1] Filtering {len(symbols)} symbols for session={market_session} …")
+    logger.info(f"[Stage1] Filtering {len(symbols)} symbols for session={market_session}, setup={setup_type} …")
     remaining = symbols[:]
     all_quotes: Dict[str, dict] = {}
     attempt = 0
@@ -580,6 +629,8 @@ def stage1_filter(symbols: List[str], market_session: str = "regular", cfg=CONFI
     else:
         batch_size = max(1, min(cfg.YF_BATCH_SIZE_STAGE1, len(symbols)))
         max_quotes = cfg.MAX_STAGE1_PASS
+
+    thresholds = _get_filter_thresholds(market_session, setup_type, cfg)
 
     while remaining and attempt <= cfg.YF_BATCH_RETRIES and len(all_quotes) < max_quotes:
         attempt += 1
@@ -638,12 +689,14 @@ def stage1_filter(symbols: List[str], market_session: str = "regular", cfg=CONFI
         if not (cfg.MIN_PRICE <= price <= cfg.MAX_PRICE):
             continue
         # minimum absolute volume
-        min_vol = cfg.MIN_VOLUME_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_VOLUME
-        if volume < min_vol:
+        if volume < thresholds["min_volume"]:
+            continue
+        # minimum percent move
+        if abs(q.get("change_pct", 0.0)) < thresholds["min_change_pct"]:
             continue
         # very rough market cap proxy: price × avg_vol × ~10 trading days
         mkt_cap_proxy = price * avg_vol * 10
-        if mkt_cap_proxy < (cfg.MIN_MARKET_CAP_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_MARKET_CAP):
+        if mkt_cap_proxy < thresholds["min_market_cap"]:
             continue
 
         passing.append(UniverseStock(
@@ -858,24 +911,29 @@ def _enrich_with_info(stocks: List[UniverseStock], cfg=CONFIG, cancel_event: Opt
         time.sleep(cfg.YF_INFO_DELAY)
 
 
-def stage2_filter(stocks: List[UniverseStock], market_session: str = "regular", cfg=CONFIG, cancel_event: Optional[threading.Event] = None) -> List[UniverseStock]:
+def stage2_filter(stocks: List[UniverseStock], market_session: str = "regular", setup_type: str = "day", cfg=CONFIG, cancel_event: Optional[threading.Event] = None) -> List[UniverseStock]:
     """
     Activity filter: relative volume, gap activity, minimum market cap.
     Cheaper than deep analysis but still cuts the list significantly.
+    setup_type: "day" or "swing" for different thresholds.
     """
     # Pre-filter by relative volume to reduce expensive yfinance info calls.
     for s in stocks:
         s.rel_volume = s.volume / s.avg_volume if s.avg_volume else 0.0
 
-    min_rel = cfg.MIN_REL_VOLUME_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_REL_VOLUME
-    min_gap = cfg.MIN_GAP_PCT_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_GAP_PCT
+    thresholds = _get_filter_thresholds(market_session, setup_type, cfg)
+    
+    min_rel = thresholds["min_rel_volume"]
+    min_gap = thresholds["min_gap_pct"]
+    min_change = thresholds["min_change_pct"]
     max_stage2 = cfg.MAX_STAGE2_PASS_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MAX_STAGE2_PASS
-    min_market_cap = cfg.MIN_MARKET_CAP_EXTENDED if market_session in ("pre-market", "after-hours") else cfg.MIN_MARKET_CAP
+    min_market_cap = thresholds["min_market_cap"]
 
-    active = [s for s in stocks if s.rel_volume >= min_rel and s.gap_pct >= min_gap]
+    # Require both relative volume and gap thresholds, and a minimum price change
+    active = [s for s in stocks if s.rel_volume >= min_rel and s.gap_pct >= min_gap and abs(getattr(s, 'change_pct', 0.0)) >= min_change]
     active.sort(key=lambda x: x.rel_volume, reverse=True)
 
-    logger.info(f"[Stage2] {len(active)} symbols passed rel-vol and gap filters for session={market_session}")
+    logger.info(f"[Stage2] {len(active)} symbols passed rel-vol and gap filters for session={market_session}, setup={setup_type}")
     to_enrich = active[: max(max_stage2 * 2, max_stage2)]
 
     # Enrich only the most promising candidates with market cap / float.
@@ -913,10 +971,11 @@ class UniverseStats:
     top_picks: int = 0
 
 
-def discover_universe(force_refresh: bool = False, market_session: str = "regular", cancel_event: Optional[threading.Event] = None) -> Tuple[List[UniverseStock], UniverseStats]:
+def discover_universe(force_refresh: bool = False, market_session: str = "regular", setup_type: str = "day", cancel_event: Optional[threading.Event] = None) -> Tuple[List[UniverseStock], UniverseStats]:
     """
     Full dynamic universe discovery.
     Returns Stage-2 candidates ready for deep technical analysis and universe stats.
+    setup_type: "day" or "swing" for different filter thresholds.
 
     Flow:
       NASDAQ FTP list  ──┐
@@ -942,7 +1001,7 @@ def discover_universe(force_refresh: bool = False, market_session: str = "regula
                 f"({stats.screener_count} from screeners + exchange list)")
 
     # 3. Stage 1 cheap filter
-    stage1 = stage1_filter(combined, market_session=market_session, cfg=CONFIG, cancel_event=cancel_event)
+    stage1 = stage1_filter(combined, market_session=market_session, setup_type=setup_type, cfg=CONFIG, cancel_event=cancel_event)
     stats.stage1_passed = len(stage1)
     stats.stage1_rejected = max(0, stats.stage1_total - stats.stage1_passed)
     name_map = dict(zip(full_df["symbol"], full_df["name"]))
@@ -953,7 +1012,7 @@ def discover_universe(force_refresh: bool = False, market_session: str = "regula
     stage1 = stage1[:max_stage1]
 
     # 4. Stage 2 activity filter
-    stage2 = stage2_filter(stage1, market_session=market_session, cfg=CONFIG, cancel_event=cancel_event)
+    stage2 = stage2_filter(stage1, market_session=market_session, setup_type=setup_type, cfg=CONFIG, cancel_event=cancel_event)
     stats.stage2_passed = len(stage2)
     stats.stage2_filtered = max(0, stats.stage1_passed - stats.stage2_passed)
     stats.stage2_symbols = [s.symbol for s in stage2]

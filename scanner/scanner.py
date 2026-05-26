@@ -420,18 +420,20 @@ def run_deep_analysis(candidates: List[UniverseStock],
 
 def run_full_scan(force_universe_refresh: bool = False,
                   market_session: str = "regular",
+                  setup_type: str = "day",
                   cancel_event: Optional[threading.Event] = None,
                   result_callback: Optional[Callable[[ScanResult], None]] = None,
                   progress_callback: Optional[Callable[[int, int], None]] = None,
                   stage_callback: Optional[Callable[[UniverseStats], None]] = None) -> Tuple[List[ScanResult], MarketRegime, UniverseStats]:
     """
     Execute the complete scanning pipeline from raw universe to trade plans.
+    setup_type: "day" or "swing" for different filter thresholds.
     Returns (results, regime, stats).
     """
     scan_start = time.time()
     logger.info("=" * 60)
     logger.info("  APEX SCANNER  –  Full scan starting")
-    logger.info(f"  Session: {market_session}")
+    logger.info(f"  Session: {market_session}  |  Setup: {setup_type}")
     logger.info("=" * 60)
 
     # ── 1. Market regime ──
@@ -447,6 +449,7 @@ def run_full_scan(force_universe_refresh: bool = False,
         candidates, stats = discover_universe(
             force_refresh=force_universe_refresh,
             market_session=market_session,
+            setup_type=setup_type,
             cancel_event=cancel_event,
         )
     logger.info(f"[Main] Universe returned {len(candidates)} stage-2 candidates")
@@ -504,14 +507,17 @@ def run_full_scan(force_universe_refresh: bool = False,
 
 # ── Continuous loop (called from main.py) ────────────────────────────────────
 
-def continuous_scan(interval_min: int = None) -> None:
+def continuous_scan(interval_min: int = None, market_session: str = 'regular', setup_type: str = 'day') -> None:
     interval = (interval_min or CONFIG.SCAN_INTERVAL_MIN) * 60
     run_count = 0
     while True:
         try:
             run_count += 1
             logger.info(f"\n[Loop] === Scan #{run_count} ===\n")
-            results, regime, _stats = run_full_scan()
+            results, regime, _stats = run_full_scan(
+                market_session=market_session,
+                setup_type=setup_type,
+            )
             _print_table(results, regime)
         except KeyboardInterrupt:
             logger.info("[Loop] Interrupted by user")

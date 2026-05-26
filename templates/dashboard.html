@@ -50,7 +50,24 @@
           <div class="grid gap-3 sm:grid-cols-2">
             <div class="space-y-1">
               <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Session</p>
-              <p id="currentSession" class="text-lg font-semibold text-white">REGULAR</p>
+              <div class="flex items-center gap-3">
+                <p id="currentSession" class="text-lg font-semibold text-white">REGULAR</p>
+                <div id="sessionControls" class="flex items-center gap-2">
+                  <button class="chip" data-session="regular" onclick="setSession('regular')">Regular</button>
+                  <button class="chip" data-session="pre-market" onclick="setSession('pre-market')">Pre</button>
+                  <button class="chip" data-session="after-hours" onclick="setSession('after-hours')">After</button>
+                </div>
+              </div>
+            </div>
+            <div class="space-y-1">
+              <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Trade type</p>
+              <div class="flex items-center gap-3">
+                <p id="currentSetupType" class="text-lg font-semibold text-white">DAY</p>
+                <div id="setupTypeControls" class="flex items-center gap-2">
+                  <button class="chip" data-setup-type="day" onclick="setSetupType('day')">Day</button>
+                  <button class="chip" data-setup-type="swing" onclick="setSetupType('swing')">Swing</button>
+                </div>
+              </div>
             </div>
             <div class="space-y-1">
               <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Scan phase</p>
@@ -115,22 +132,22 @@
               </div>
               <div class="mt-6 rounded-3xl bg-slate-900/80 p-5">
                 <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Penny stock filters</p>
-                <div class="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                  <div class="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
                   <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
                     <span>Max price</span>
-                    <strong class="text-white">${{ config.MAX_PRICE }}</strong>
+                    <strong class="text-white">${{ state.filters.MAX_PRICE }}</strong>
                   </div>
                   <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
                     <span>Min volume</span>
-                    <strong class="text-white">{{ config.MIN_VOLUME }}</strong>
+                    <strong class="text-white">{{ state.filters.MIN_VOLUME }}</strong>
                   </div>
                   <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
                     <span>Relative volume</span>
-                    <strong class="text-white">{{ config.MIN_REL_VOLUME }}×</strong>
+                    <strong class="text-white">{{ state.filters.MIN_REL_VOLUME }}×</strong>
                   </div>
                   <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
                     <span>Min gap</span>
-                    <strong class="text-white">{{ config.MIN_GAP_PCT }}%</strong>
+                    <strong class="text-white">{{ state.filters.MIN_GAP_PCT }}%</strong>
                   </div>
                 </div>
               </div>
@@ -370,7 +387,8 @@
       function updateState(data) {
         const status = data.running ? 'Scanning' : data.error ? 'Error' : 'Ready';
         updateStatusBadge(status);
-        document.getElementById('currentSession').innerText = safeText(data.current_market_session || data.session || 'REGULAR').toUpperCase();
+        document.getElementById('currentSession').innerText = safeText(data.selected_session || data.current_market_session || data.session || 'REGULAR').toUpperCase();
+        document.getElementById('currentSetupType').innerText = safeText(data.selected_setup_type || data.setup_type || 'day').toUpperCase();
         document.getElementById('phaseTitle').innerText = safeText(data.phase || 'Waiting');
         document.getElementById('phaseText').innerText = safeText(data.phase || 'Waiting');
         document.getElementById('phaseMessage').innerText = safeText(data.phase_message || 'Awaiting scan...');
@@ -400,9 +418,14 @@
           hideError();
         }
       }
-      async function fetchState() {
+      async function fetchState(session, setupType) {
+        session = session || getUrlSession();
+        setupType = setupType || getUrlSetupType();
         try {
-          const response = await fetch('/state');
+          const url = new URL('/state', window.location.origin);
+          if (session) url.searchParams.set('session', session);
+          if (setupType) url.searchParams.set('setup_type', setupType);
+          const response = await fetch(url.toString());
           const data = await response.json();
           updateState(data);
         } catch (err) {
@@ -410,10 +433,94 @@
           showError('Unable to load scanner state.');
         }
       }
+
+      function getUrlSession() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const value = params.get('session');
+          if (value) return value;
+          const current = document.getElementById('currentSession')?.innerText?.trim().toLowerCase();
+          if (current === 'pre' || current === 'pre-market') return 'pre-market';
+          if (current === 'after' || current === 'after-hours') return 'after-hours';
+          return 'regular';
+        } catch (e) {
+          return 'regular';
+        }
+      }
+
+      function getUrlSetupType() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const value = params.get('setup_type');
+          if (value) return value;
+          const current = document.getElementById('currentSetupType')?.innerText?.trim().toLowerCase();
+          return current === 'swing' ? 'swing' : 'day';
+        } catch (e) {
+          return 'day';
+        }
+      }
+
+      function setSession(session) {
+        // request server to set forced session and update UI
+        fetch(`/set_session?session=${encodeURIComponent(session)}`)
+          .then(r => r.json())
+          .then(res => {
+            if (!res.ok) throw new Error(res.error || 'Failed to set session');
+            const url = new URL(window.location.href);
+            if (session) url.searchParams.set('session', session);
+            else url.searchParams.delete('session');
+            window.history.replaceState({}, '', url.toString());
+            document.querySelectorAll('#sessionControls button').forEach(btn => {
+              if (btn.dataset.session === session) btn.classList.add('badge-success'); else btn.classList.remove('badge-success');
+            });
+            fetchState(session, getUrlSetupType());
+          })
+          .catch(err => { console.error(err); showError('Unable to set session'); });
+      }
+
+      function getUrlSetupType() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return params.get('setup_type') || 'day';
+        } catch (e) {
+          return 'day';
+        }
+      }
+
+      function setSetupType(setupType) {
+        // request server to set forced setup type and update UI
+        fetch(`/set_setup_type?setup_type=${encodeURIComponent(setupType)}`)
+          .then(r => r.json())
+          .then(res => {
+            if (!res.ok) throw new Error(res.error || 'Failed to set setup type');
+            const url = new URL(window.location.href);
+            if (setupType) url.searchParams.set('setup_type', setupType);
+            else url.searchParams.delete('setup_type');
+            window.history.replaceState({}, '', url.toString());
+            document.querySelectorAll('#setupTypeControls button').forEach(btn => {
+              if (btn.dataset.setupType === setupType) btn.classList.add('badge-success'); else btn.classList.remove('badge-success');
+            });
+            fetchState(getUrlSession(), setupType);
+          })
+          .catch(err => { console.error(err); showError('Unable to set setup type'); });
+      }
+
       document.addEventListener('DOMContentLoaded', () => {
         updateState(window.STATE || {});
-        fetchState();
-        setInterval(fetchState, 3000);
+        const session = getUrlSession();
+        const setupType = getUrlSetupType();
+        if (session) {
+          document.querySelectorAll('#sessionControls button').forEach(btn => {
+            if (btn.dataset.session === session) btn.classList.add('badge-success');
+          });
+        }
+        if (setupType) {
+          document.querySelectorAll('#setupTypeControls button').forEach(btn => {
+            if (btn.dataset.setupType === setupType) btn.classList.add('badge-success');
+          });
+        }
+        fetchState(session, setupType);
+        setInterval(() => fetchState(getUrlSession(), getUrlSetupType()), 3000);
       });
     </script>
   </body>

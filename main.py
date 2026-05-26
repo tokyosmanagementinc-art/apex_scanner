@@ -57,7 +57,7 @@ logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 from scanner.utils import setup_logging, logger, console
 from scanner.config import CONFIG
 from scanner.background import get_cached_state
-from web import app as web_app, init_scanner_daemon
+from web import app as web_app, init_scanner_daemon_with_session
 
 
 def _print_cached_results(state: dict) -> None:
@@ -119,13 +119,18 @@ def cmd_scan(args) -> None:
     from scanner import run_full_scan, continuous_scan, _print_table
     if args.loop:
         logger.info(f"Starting continuous scan every {CONFIG.SCAN_INTERVAL_MIN} minutes …")
-        continuous_scan(interval_min=CONFIG.SCAN_INTERVAL_MIN)
+        continuous_scan(
+            interval_min=CONFIG.SCAN_INTERVAL_MIN,
+            market_session=args.session,
+            setup_type=args.setup_type,
+        )
         return
 
     if args.refresh:
         results, regime, _stats = run_full_scan(
             force_universe_refresh=True,
             market_session=args.session,
+            setup_type=args.setup_type,
         )
         _print_table(results, regime)
         if not results:
@@ -192,7 +197,10 @@ def cmd_dashboard(args) -> None:
     # Start a background scanner unless explicitly disabled.
     if not getattr(args, "no_scanner", False):
         use_process = not getattr(args, "foreground", False)
-        init_scanner_daemon(use_process=use_process)
+        # allow forcing a session and setup type for the daemon via CLI
+        session = getattr(args, "session", None)
+        setup_type = getattr(args, "setup_type", None)
+        init_scanner_daemon_with_session(use_process=use_process, session=session, setup_type=setup_type)
         console.print(f"[dim]  Background scanner process is running in parallel.[/dim]\n")
     else:
         console.print(f"[dim]  Dashboard starting without a local scanner. Use a separate scanner service or refresh cache manually.[/dim]\n")
@@ -219,6 +227,8 @@ def main() -> None:
                         help="Force fresh universe list (bypass cache)")
     p_scan.add_argument("--session", choices=["regular", "pre-market", "after-hours"], default="regular",
                         help="Choose the market session for this scan")
+    p_scan.add_argument("--setup-type", choices=["day", "swing"], default="day",
+                        help="Choose the setup type for this scan")
     p_scan.add_argument("--verbose", action="store_true",
                         help="Enable DEBUG logging")
     p_scan.set_defaults(func=cmd_scan)
@@ -243,6 +253,10 @@ def main() -> None:
                         help="Run background scanner in-process (thread) so logs are visible in this terminal")
     p_dash.add_argument("--no-scanner", action="store_true",
                         help="Start the web dashboard without launching a background scanner")
+    p_dash.add_argument("--session", choices=["regular", "pre-market", "after-hours"], default=None,
+                        help="Force dashboard/scanner to use a specific session")
+    p_dash.add_argument("--setup-type", choices=["day", "swing"], default=None,
+                        help="Force dashboard/scanner to use a specific setup type")
     p_dash.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()

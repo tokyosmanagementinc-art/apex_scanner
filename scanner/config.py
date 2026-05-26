@@ -34,6 +34,39 @@ class ScannerConfig:
     MIN_REL_VOLUME_EXTENDED:      float = field(default_factory=lambda: _f("MIN_REL_VOLUME_EXTENDED", 2.4))
     MIN_MARKET_CAP_EXTENDED:      float = field(default_factory=lambda: _f("MIN_MARKET_CAP_EXTENDED", 20_000_000))
     MIN_GAP_PCT_EXTENDED:         float = field(default_factory=lambda: _f("MIN_GAP_PCT_EXTENDED", 1.2))
+    # Minimum percent change (pre/post market) to consider in extended sessions
+    MIN_CHANGE_PCT:                float = field(default_factory=lambda: _f("MIN_CHANGE_PCT", 0.5))
+    MIN_CHANGE_PCT_EXTENDED:       float = field(default_factory=lambda: _f("MIN_CHANGE_PCT_EXTENDED", 1.0))
+
+    # ── Day Trade Filters (momentum, same-day exit) ────────────────────────────
+    # Day trades: higher volatility, higher relative volume, stricter gap
+    MIN_VOLUME_DAY:              int   = field(default_factory=lambda: _i("MIN_VOLUME_DAY", 150_000))
+    MIN_REL_VOLUME_DAY:          float = field(default_factory=lambda: _f("MIN_REL_VOLUME_DAY", 2.2))
+    MIN_GAP_PCT_DAY:             float = field(default_factory=lambda: _f("MIN_GAP_PCT_DAY", 1.2))
+    MIN_MARKET_CAP_DAY:          float = field(default_factory=lambda: _f("MIN_MARKET_CAP_DAY", 25_000_000))
+    MIN_CHANGE_PCT_DAY:          float = field(default_factory=lambda: _f("MIN_CHANGE_PCT_DAY", 0.8))
+
+    # Day trade extended-hours (pre/after)
+    MIN_VOLUME_DAY_EXTENDED:     int   = field(default_factory=lambda: _i("MIN_VOLUME_DAY_EXTENDED", 100_000))
+    MIN_REL_VOLUME_DAY_EXTENDED: float = field(default_factory=lambda: _f("MIN_REL_VOLUME_DAY_EXTENDED", 2.8))
+    MIN_GAP_PCT_DAY_EXTENDED:    float = field(default_factory=lambda: _f("MIN_GAP_PCT_DAY_EXTENDED", 1.5))
+    MIN_MARKET_CAP_DAY_EXTENDED: float = field(default_factory=lambda: _f("MIN_MARKET_CAP_DAY_EXTENDED", 20_000_000))
+    MIN_CHANGE_PCT_DAY_EXTENDED: float = field(default_factory=lambda: _f("MIN_CHANGE_PCT_DAY_EXTENDED", 1.2))
+
+    # ── Swing Trade Filters (trend, 3-5 day holds) ────────────────────────────
+    # Swing trades: stability, lower relative volume, trend alignment
+    MIN_VOLUME_SWING:            int   = field(default_factory=lambda: _i("MIN_VOLUME_SWING", 80_000))
+    MIN_REL_VOLUME_SWING:        float = field(default_factory=lambda: _f("MIN_REL_VOLUME_SWING", 1.4))
+    MIN_GAP_PCT_SWING:           float = field(default_factory=lambda: _f("MIN_GAP_PCT_SWING", 0.5))
+    MIN_MARKET_CAP_SWING:        float = field(default_factory=lambda: _f("MIN_MARKET_CAP_SWING", 40_000_000))
+    MIN_CHANGE_PCT_SWING:        float = field(default_factory=lambda: _f("MIN_CHANGE_PCT_SWING", 0.3))
+
+    # Swing trade extended-hours
+    MIN_VOLUME_SWING_EXTENDED:     int   = field(default_factory=lambda: _i("MIN_VOLUME_SWING_EXTENDED", 60_000))
+    MIN_REL_VOLUME_SWING_EXTENDED: float = field(default_factory=lambda: _f("MIN_REL_VOLUME_SWING_EXTENDED", 1.8))
+    MIN_GAP_PCT_SWING_EXTENDED:    float = field(default_factory=lambda: _f("MIN_GAP_PCT_SWING_EXTENDED", 0.7))
+    MIN_MARKET_CAP_SWING_EXTENDED: float = field(default_factory=lambda: _f("MIN_MARKET_CAP_SWING_EXTENDED", 30_000_000))
+    MIN_CHANGE_PCT_SWING_EXTENDED: float = field(default_factory=lambda: _f("MIN_CHANGE_PCT_SWING_EXTENDED", 0.6))
 
     # ── Pipeline Limits ───────────────────────────────────────────────────────
     MAX_UNIVERSE_SIZE:   int   = field(default_factory=lambda: _i("MAX_UNIVERSE_SIZE", 1500))

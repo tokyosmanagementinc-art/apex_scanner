@@ -10,6 +10,7 @@ from scanner.universe import UniverseStats
 from scanner.utils import CACHE, get_market_session, logger
 
 SESSION_TYPES = ("regular", "pre-market", "after-hours")
+SETUP_TYPES = ("day", "swing")
 CACHE_KEY = "apex_scan_cache_v1"
 CACHE_TTL = 86_400
 
@@ -21,6 +22,8 @@ _SCAN_THREAD_STARTED = False
 _SCAN_THREAD: Optional[threading.Thread] = None
 
 SESSION_CACHE: Dict[str, dict] = {}
+_FORCED_SESSION: Optional[str] = None
+_FORCED_SETUP_TYPE: Optional[str] = None
 
 
 def _iso_now() -> str:
@@ -30,6 +33,7 @@ def _iso_now() -> str:
 def _default_state(session: str) -> dict:
     return {
         "session": session,
+        "setup_type": "day",
         "current_market_session": get_market_session(),
         "status": "Idle",
         "running": False,
@@ -183,23 +187,24 @@ def get_cached_state(session: str) -> dict:
     return state
 
 
-def _run_scan(session: str) -> None:
+def _run_scan(session: str, setup_type: str = "day") -> None:
     if _SCAN_LOCK.locked():
         _append_log(session, "Scan skipped because a scan is already running.")
         return
 
     _update_state(session, {
+        "setup_type": setup_type,
         "status": "Scanning",
         "running": True,
         "error": None,
         "phase": "Discovering universe",
-        "phase_message": f"Running background scan for {session} session.",
+        "phase_message": f"Running background scan for {session} session ({setup_type} trades).",
         "progress": {"current": 0, "total": 0},
         "scan_started_at": _iso_now(),
         "elapsed_seconds": 0,
         "last_duration": None,
     })
-    _append_log(session, f"Background scan started for {session}.")
+    _append_log(session, f"Background scan started for {session} ({setup_type}).")
 
     def stage_callback(stats: UniverseStats) -> None:
         _update_state(session, {
@@ -220,6 +225,7 @@ def _run_scan(session: str) -> None:
             results, regime, stats = run_full_scan(
                 force_universe_refresh=False,
                 market_session=session,
+                setup_type=setup_type,
                 cancel_event=None,
                 result_callback=None,
                 progress_callback=progress_callback,
@@ -239,7 +245,7 @@ def _run_scan(session: str) -> None:
                 "last_duration": completed_duration,
                 "error": None,
             })
-            _append_log(session, f"Background scan completed for {session}.")
+            _append_log(session, f"Background scan completed for {session} ({setup_type}).")
     except Exception as exc:
         logger.exception("Background scan failed")
         _update_state(session, {
@@ -252,6 +258,46 @@ def _run_scan(session: str) -> None:
         _append_log(session, f"Background scan failed: {exc}")
 
 
+def set_forced_session(session: Optional[str]) -> None:
+    """Force background scanner to treat all runs as the given session.
+    Pass None to clear the override and resume automatic session detection.
+    """
+    global _FORCED_SESSION
+    # Persist override into file cache so subprocesses can pick it up
+    overrides = CACHE.get("apex_scan_overrides") or {}
+    if session is None:
+        _FORCED_SESSION = None
+        overrides.pop("session", None)
+        CACHE.set("apex_scan_overrides", overrides, ttl=CACHE_TTL)
+        return
+    if session in SESSION_TYPES:
+        _FORCED_SESSION = session
+        overrides["session"] = session
+        CACHE.set("apex_scan_overrides", overrides, ttl=CACHE_TTL)
+    else:
+        raise ValueError(f"Invalid session: {session}")
+
+
+def set_forced_setup_type(setup_type: Optional[str]) -> None:
+    """Force background scanner to use a specific setup type (day or swing).
+    Pass None to use "day" as default.
+    """
+    global _FORCED_SETUP_TYPE
+    # Persist override into file cache so subprocesses can pick it up
+    overrides = CACHE.get("apex_scan_overrides") or {}
+    if setup_type is None:
+        _FORCED_SETUP_TYPE = None
+        overrides.pop("setup_type", None)
+        CACHE.set("apex_scan_overrides", overrides, ttl=CACHE_TTL)
+        return
+    if setup_type in SETUP_TYPES:
+        _FORCED_SETUP_TYPE = setup_type
+        overrides["setup_type"] = setup_type
+        CACHE.set("apex_scan_overrides", overrides, ttl=CACHE_TTL)
+    else:
+        raise ValueError(f"Invalid setup_type: {setup_type}")
+
+
 def _session_interval(session: str) -> int:
     return CONFIG.SCAN_INTERVAL_MIN if session == "regular" else CONFIG.SCAN_INTERVAL_MIN_EXTENDED
 
@@ -259,17 +305,37 @@ def _session_interval(session: str) -> int:
 def background_scan_loop() -> None:
     global SESSION_CACHE
     SESSION_CACHE = _load_cache()
+    # Load persisted overrides from file cache (helps when scanner runs in a separate process)
+    overrides = CACHE.get("apex_scan_overrides") or {}
+    if isinstance(overrides, dict):
+        global _FORCED_SESSION, _FORCED_SETUP_TYPE
+        _FORCED_SESSION = overrides.get("session") or _FORCED_SESSION
+        _FORCED_SETUP_TYPE = overrides.get("setup_type") or _FORCED_SETUP_TYPE
     while True:
-        session = get_market_session()
-        interval = _session_interval(session) * 60
-        next_run_at = time.time() + interval
-        _update_state(session, {"next_run_at": next_run_at})
-        try:
-            _run_scan(session)
-        except Exception:
-            pass
-        sleep_seconds = max(5, next_run_at - time.time())
-        time.sleep(sleep_seconds)
+        now = time.time()
+        # If a forced session is set, only run that; otherwise monitor all session types
+        sessions = [_FORCED_SESSION] if _FORCED_SESSION else list(SESSION_TYPES)
+        setup_type = _FORCED_SETUP_TYPE or "day"
+        for session in sessions:
+            try:
+                state = SESSION_CACHE.get(session) or _default_state(session)
+                next_run_at = state.get("next_run_at") or 0
+                if now >= next_run_at:
+                    interval = _session_interval(session) * 60
+                    next_run_at = time.time() + interval
+                    _update_state(session, {"next_run_at": next_run_at})
+                    try:
+                        _run_scan(session, setup_type)
+                    except Exception:
+                        # swallow to keep other sessions running
+                        pass
+                    # brief pause between session scans
+                    time.sleep(1)
+            except Exception:
+                # prevent a single session failure from stopping the loop
+                continue
+        # short sleep before re-evaluating which sessions are due
+        time.sleep(5)
 
 
 def start_background_scanner() -> None:

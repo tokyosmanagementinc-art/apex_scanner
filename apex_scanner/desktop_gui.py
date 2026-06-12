@@ -25,6 +25,16 @@ from scanner.market_regime import get_market_regime
 from scanner.utils import fmt_price
 from scanner.config import CONFIG
 
+# Lazy imports for plotting
+try:
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    import yfinance as yf
+except Exception:
+    Figure = None
+    FigureCanvas = None
+    yf = None
+
 
 class ScannerSignals(QObject):
     """Signals for thread-safe GUI updates."""
@@ -270,6 +280,23 @@ class APEXScannerGUI(QMainWindow):
             for k, v in details.items():
                 form.addRow(QLabel(str(k)), QLabel(str(v)))
             dlg_layout.addLayout(form)
+            # If plotting libs are available, fetch recent price history and show chart
+            if Figure is not None and yf is not None:
+                try:
+                    hist = yf.Ticker(symbol).history(period="3mo", interval="1d")
+                    if not hist.empty:
+                        fig = Figure(figsize=(6, 3))
+                        ax = fig.add_subplot(111)
+                        ax.plot(hist.index, hist["Close"], color="#1f77b4", lw=1.5)
+                        ax.set_title(f"{symbol} — Close Price (3 months)")
+                        ax.set_xlabel("")
+                        ax.grid(alpha=0.3)
+                        canvas = FigureCanvas(fig)
+                        dlg_layout.addWidget(canvas)
+                except Exception:
+                    # ignore plotting errors and continue with dialog
+                    pass
+
             buttons = QDialogButtonBox(QDialogButtonBox.Ok)
             buttons.accepted.connect(dlg.accept)
             dlg_layout.addWidget(buttons)

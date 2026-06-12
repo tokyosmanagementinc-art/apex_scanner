@@ -34,7 +34,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["apex_scanner", "scanner", "scanner.*"]
+include = ["apex_scanner", "apex_scanner.*", "scanner", "scanner.*"]
 
 [tool.setuptools.package-data]
 "apex_scanner" = ["templates/*"]

@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>APEX Scanner Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              surface: '#020617',
+              panel: '#111827',
+              accent: '#38bdf8',
+              success: '#22c55e',
+              warning: '#f59e0b',
+              danger: '#ef4444',
+            },
+          }
+        }
+      };
+    </script>
+    <style>
+      body { font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #020617 0%, #070b16 100%); }
+      .glass { background: rgba(15, 23, 42, .88); backdrop-filter: blur(18px); }
+      .chip { border-radius: 9999px; background: rgba(148, 163, 184, .12); padding: .5rem .85rem; font-size: .8rem; color: #cbd5e1; }
+      .badge { border-radius: 9999px; padding: .4rem .8rem; font-size: .75rem; font-weight: 600; }
+      .badge-success { background: rgba(34, 197, 94, .16); color: #86efac; }
+      .badge-warning { background: rgba(245, 158, 11, .16); color: #facc15; }
+      .badge-danger { background: rgba(239, 68, 68, .16); color: #fecaca; }
+      .badge-neutral { background: rgba(100, 116, 139, .16); color: #cbd5e1; }
+      .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+      .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.24); border-radius: 9999px; }
+    </style>
+  </head>
+  <body class="min-h-screen text-slate-200">
+    <div class="mx-auto max-w-7xl px-4 py-6">
+      <header class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.28em] text-slate-500">APEX Scanner</p>
+          <h1 class="mt-3 text-4xl font-semibold text-white">Live scan dashboard</h1>
+          <p class="mt-3 max-w-2xl text-slate-400">Runs the scanner in the background and displays active candidates, scan progress, and ticker status from Yahoo + Finviz.</p>
+        </div>
+        <div class="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/90 p-5 shadow-xl shadow-slate-900/20">
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-xs uppercase tracking-[0.28em] text-slate-500">Server status</span>
+            <span id="statusBadge" class="badge badge-neutral">Idle</span>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Session</p>
+              <p id="currentSession" class="text-lg font-semibold text-white">REGULAR</p>
+            </div>
+            <div class="space-y-1">
+              <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Scan phase</p>
+              <p id="phaseTitle" class="text-lg font-semibold text-white">Waiting</p>
+            </div>
+          </div>
+          <button onclick="fetchState()" class="w-full rounded-3xl bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-800">Refresh now</button>
+        </div>
+      </header>
+
+      <div id="errorBanner" class="hidden rounded-3xl border border-danger/20 bg-danger/10 px-5 py-4 text-sm text-danger shadow-sm">
+        <strong class="block text-white">Scan failed</strong>
+        <p id="errorMessage" class="mt-2 text-slate-100"></p>
+      </div>
+
+      <main class="space-y-6">
+        <section class="grid gap-6 xl:grid-cols-[380px_1fr]">
+          <div class="space-y-6">
+            <article class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+              <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Scan timeline</p>
+              <div class="mt-5 grid gap-4">
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-sm text-slate-400">Elapsed time</p>
+                  <p id="elapsedTime" class="mt-2 text-3xl font-semibold text-white">0m 0s</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-sm text-slate-400">Next refresh</p>
+                  <p id="nextScan" class="mt-2 text-3xl font-semibold text-white">—</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-sm text-slate-400">Last update</p>
+                  <p id="lastUpdated" class="mt-2 text-2xl font-semibold text-white">—</p>
+                </div>
+              </div>
+            </article>
+
+            <article class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Counts</p>
+                  <h2 class="mt-2 text-2xl font-semibold text-white">Pipeline summary</h2>
+                </div>
+                <span id="dataSourceBadge" class="badge badge-neutral">Yahoo + Finviz</span>
+              </div>
+              <div class="mt-6 grid gap-4 sm:grid-cols-2">
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Universe size</p>
+                  <p id="universeSize" class="mt-3 text-3xl font-semibold text-white">—</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Stage 1 passed</p>
+                  <p id="stage1Passed" class="mt-3 text-3xl font-semibold text-white">—</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Stage 2 candidates</p>
+                  <p id="stage2Passed" class="mt-3 text-3xl font-semibold text-white">—</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Final setups</p>
+                  <p id="topPicks" class="mt-3 text-3xl font-semibold text-white">—</p>
+                </div>
+              </div>
+              <div class="mt-6 rounded-3xl bg-slate-900/80 p-5">
+                <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Penny stock filters</p>
+                <div class="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                  <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
+                    <span>Max price</span>
+                    <strong class="text-white">${{ config.MAX_PRICE }}</strong>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
+                    <span>Min volume</span>
+                    <strong class="text-white">{{ config.MIN_VOLUME }}</strong>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
+                    <span>Relative volume</span>
+                    <strong class="text-white">{{ config.MIN_REL_VOLUME }}×</strong>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 border border-slate-800 rounded-3xl bg-slate-950/80 px-4 py-3">
+                    <span>Min gap</span>
+                    <strong class="text-white">{{ config.MIN_GAP_PCT }}%</strong>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+            <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Progress</p>
+            <div class="mt-5 space-y-4">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Current phase</p>
+                  <p id="phaseText" class="mt-2 text-xl font-semibold text-white">Waiting</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-5">
+                  <p class="text-xs text-slate-400">Estimated remaining</p>
+                  <p id="estimatedRemaining" class="mt-2 text-xl font-semibold text-white">—</p>
+                </div>
+              </div>
+              <div class="rounded-3xl bg-slate-900/80 p-5">
+                <div class="flex items-center justify-between text-sm text-slate-400">
+                  <span>Phase progress</span>
+                  <span id="phaseProgress" class="font-semibold text-white">0 / 0</span>
+                </div>
+                <div class="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
+                  <div id="progressBar" class="h-3 rounded-full bg-accent w-0 transition-all duration-300"></div>
+                </div>
+              </div>
+              <div class="rounded-3xl bg-slate-900/80 p-5">
+                <p class="text-xs text-slate-400">Recent activity</p>
+                <p id="phaseMessage" class="mt-3 text-base text-slate-200">Waiting for the next scan.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="grid gap-6 xl:grid-cols-[1fr_420px]">
+          <div class="space-y-6">
+            <article class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Stage 1</p>
+                  <h2 class="mt-2 text-2xl font-semibold text-white">Initial symbol filtering</h2>
+                </div>
+                <span class="badge badge-success">Fast batch checks</span>
+              </div>
+              <div class="mt-5 grid gap-3">
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div class="rounded-3xl bg-slate-900/80 p-4">
+                    <p class="text-xs text-slate-400">Stage 1 total</p>
+                    <p id="stage1Total" class="mt-2 text-2xl font-semibold text-white">—</p>
+                  </div>
+                  <div class="rounded-3xl bg-slate-900/80 p-4">
+                    <p class="text-xs text-slate-400">Rejected</p>
+                    <p id="stage1Rejected" class="mt-2 text-2xl font-semibold text-white">—</p>
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Top Stage 1 tickers</p>
+                  <div id="stage1Symbols" class="flex flex-wrap gap-2"></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Stage 2</p>
+                  <h2 class="mt-2 text-2xl font-semibold text-white">Activity and strength filter</h2>
+                </div>
+                <span class="badge badge-warning">Vol + sector checks</span>
+              </div>
+              <div class="mt-5 grid gap-3">
+                <div class="rounded-3xl bg-slate-900/80 p-4">
+                  <p class="text-xs text-slate-400">Stage 2 passed</p>
+                  <p id="stage2PassedLarge" class="mt-2 text-2xl font-semibold text-white">—</p>
+                </div>
+                <div class="space-y-2">
+                  <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Top Stage 2 tickers</p>
+                  <div id="stage2Symbols" class="flex flex-wrap gap-2"></div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <article class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Final results</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Top setups</h2>
+              </div>
+              <span class="badge badge-success">Ready to trade</span>
+            </div>
+            <div class="mt-5 space-y-4">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-3xl bg-slate-900/80 p-4">
+                  <p class="text-xs text-slate-400">Setup count</p>
+                  <p id="finalCount" class="mt-2 text-3xl font-semibold text-white">—</p>
+                </div>
+                <div class="rounded-3xl bg-slate-900/80 p-4">
+                  <p class="text-xs text-slate-400">Last scan</p>
+                  <p id="lastScan" class="mt-2 text-3xl font-semibold text-white">—</p>
+                </div>
+              </div>
+              <div class="overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950/80 p-4">
+                <div class="grid gap-3">
+                  <div class="grid grid-cols-[1.3fr_1fr_1fr] gap-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid-cols-6">
+                    <span>Symbol</span>
+                    <span>Company</span>
+                    <span>Signal</span>
+                    <span>Price</span>
+                    <span>Rel Vol</span>
+                    <span>Score</span>
+                  </div>
+                  <div id="topResults" class="space-y-3"></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="glass rounded-[32px] border border-slate-800 p-6 shadow-xl shadow-slate-900/20">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.28em] text-slate-500">Live logs</p>
+              <h2 class="mt-2 text-2xl font-semibold text-white">Scanner activity</h2>
+            </div>
+            <span class="badge badge-neutral">Most recent first</span>
+          </div>
+          <div id="liveLogs" class="mt-5 grid gap-3 text-slate-300"></div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      window.STATE = {{ state_json|tojson }};
+      window.APP_CONFIG = { scanInterval: {{ config.SCAN_INTERVAL_MIN }} };
+
+      function safeText(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '—';
+        return String(value);
+      }
+      function formatMoney(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '—';
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value);
+      }
+      function formatPercent(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '—';
+        return `${Number(value).toFixed(2)}%`;
+      }
+      function formatRel(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '—';
+        return `${Number(value).toFixed(1)}×`;
+      }
+      function formatDuration(seconds) {
+        if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return '—';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.max(0, Math.floor(seconds % 60));
+        return `${mins}m ${secs}s`;
+      }
+      function computeNextScan(lastScan, nextRunIn) {
+        if (typeof nextRunIn === 'number') {
+          const minutes = Math.floor(nextRunIn / 60);
+          const seconds = nextRunIn % 60;
+          return `${minutes}m ${seconds}s`;
+        }
+        if (!lastScan) return 'waiting';
+        const next = new Date(lastScan).getTime() + APP_CONFIG.scanInterval * 60 * 1000;
+        const diff = next - Date.now();
+        if (diff <= 0) return 'Due now';
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        return `${mins}m ${secs}s`;
+      }
+      function updateStatusBadge(status) {
+        const badge = document.getElementById('statusBadge');
+        badge.className = 'badge';
+        if (status === 'Scanning') {
+          badge.classList.add('badge-warning');
+          badge.innerText = 'Scanning';
+        } else if (status === 'Error') {
+          badge.classList.add('badge-danger');
+          badge.innerText = 'Error';
+        } else {
+          badge.classList.add('badge-success');
+          badge.innerText = 'Ready';
+        }
+      }
+      function renderLabels(container, symbols) {
+        container.innerHTML = '';
+        if (!symbols || !symbols.length) {
+          container.innerHTML = '<span class="chip">no data</span>';
+          return;
+        }
+        const slice = symbols.slice(0, 20);
+        container.innerHTML = slice.map(sym => `<span class="chip">${sym}</span>`).join(' ');
+      }
+      function renderTopResults(results) {
+        const container = document.getElementById('topResults');
+        if (!results || !results.length) {
+          container.innerHTML = `<div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 text-center text-slate-400">No final setups available yet.</div>`;
+          return;
+        }
+        container.innerHTML = results.slice(0, 10).map(r => `
+          <div class="grid grid-cols-[1.2fr_1.8fr_1fr] gap-3 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 text-sm sm:grid-cols-[1.2fr_2.3fr_1fr_1fr_1fr_1fr]">
+            <div class="font-semibold text-white">${r.symbol}</div>
+            <div class="text-slate-300">${r.company || r.symbol}</div>
+            <div class="text-slate-200">${r.signal_direction || 'LONG'}</div>
+            <div class="text-slate-200">${formatMoney(r.price)}</div>
+            <div class="text-slate-200">${formatRel(r.rel_volume)}</div>
+            <div class="text-slate-200">${Number(r.composite || 0).toFixed(0)}</div>
+          </div>
+        `).join('');
+      }
+      function renderLogs(logs) {
+        const section = document.getElementById('liveLogs');
+        section.innerHTML = '';
+        if (!logs || !logs.length) {
+          section.innerHTML = '<div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 text-slate-400">No logs yet.</div>';
+          return;
+        }
+        section.innerHTML = logs.slice(0, 12).map(entry => `
+          <div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
+            <div class="flex items-center justify-between gap-3 text-xs text-slate-500"><span>${new Date(entry.time).toLocaleTimeString()}</span><span>${entry.message.length > 60 ? entry.message.slice(0, 60) + '…' : ''}</span></div>
+            <p class="mt-2 text-sm text-slate-200">${entry.message}</p>
+          </div>
+        `).join('');
+      }
+      function showError(message) {
+        const banner = document.getElementById('errorBanner');
+        document.getElementById('errorMessage').innerText = message || 'Unknown error';
+        banner.classList.remove('hidden');
+      }
+      function hideError() {
+        document.getElementById('errorBanner').classList.add('hidden');
+      }
+      function updateState(data) {
+        const status = data.running ? 'Scanning' : data.error ? 'Error' : 'Ready';
+        updateStatusBadge(status);
+        document.getElementById('currentSession').innerText = safeText(data.current_market_session || data.session || 'REGULAR').toUpperCase();
+        document.getElementById('phaseTitle').innerText = safeText(data.phase || 'Waiting');
+        document.getElementById('phaseText').innerText = safeText(data.phase || 'Waiting');
+        document.getElementById('phaseMessage').innerText = safeText(data.phase_message || 'Awaiting scan...');
+        document.getElementById('phaseProgress').innerText = `${safeText(data.progress?.current || 0)} / ${safeText(data.progress?.total || 0)}`;
+        const progress = data.progress?.total ? Math.min(100, Math.round((data.progress.current || 0) / data.progress.total * 100)) : 0;
+        document.getElementById('progressBar').style.width = `${progress}%`;
+        document.getElementById('elapsedTime').innerText = formatDuration(data.elapsed_seconds);
+        document.getElementById('estimatedRemaining').innerText = data.estimated_remaining !== null && data.estimated_remaining !== undefined ? formatDuration(data.estimated_remaining) : (data.running ? 'Calculating...' : '—');
+        document.getElementById('lastUpdated').innerText = data.last_updated ? new Date(data.last_updated).toLocaleString() : '—';
+        document.getElementById('nextScan').innerText = computeNextScan(data.last_scan, data.next_run_in);
+        document.getElementById('universeSize').innerText = safeText(data.stats?.universe_size ?? '—');
+        document.getElementById('stage1Passed').innerText = safeText(data.stats?.stage1_passed ?? '—');
+        document.getElementById('stage2Passed').innerText = safeText(data.stats?.stage2_passed ?? '—');
+        document.getElementById('topPicks').innerText = safeText(data.stats?.top_picks ?? (data.results ? data.results.length : '—'));
+        document.getElementById('stage1Total').innerText = safeText(data.stats?.stage1_total ?? '—');
+        document.getElementById('stage1Rejected').innerText = safeText(data.stats?.stage1_rejected ?? '—');
+        document.getElementById('stage2PassedLarge').innerText = safeText(data.stats?.stage2_passed ?? '—');
+        document.getElementById('finalCount').innerText = safeText(data.results?.length ?? '—');
+        document.getElementById('lastScan').innerText = data.last_scan ? new Date(data.last_scan).toLocaleString() : '—';
+        renderLabels(document.getElementById('stage1Symbols'), data.stats?.stage1_symbols || []);
+        renderLabels(document.getElementById('stage2Symbols'), data.stats?.stage2_symbols || []);
+        renderTopResults(data.results || []);
+        renderLogs(data.logs || []);
+        if (data.error && !data.running) {
+          showError(data.error);
+        } else {
+          hideError();
+        }
+      }
+      async function fetchState() {
+        try {
+          const response = await fetch('/state');
+          const data = await response.json();
+          updateState(data);
+        } catch (err) {
+          console.error('Failed to refresh state', err);
+          showError('Unable to load scanner state.');
+        }
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        updateState(window.STATE || {});
+        fetchState();
+        setInterval(fetchState, 3000);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apex-scanner"
+version = "0.1.0"
+description = "APEX Stock Scanner – dynamic, pipeline-based momentum & breakout scanner"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  {name = "APEX Scanner"}
+]
+dependencies = [
+  "yfinance>=0.2.36",
+  "pandas>=2.0.0",
+  "numpy>=1.24.0",
+  "requests>=2.31.0",
+  "aiohttp>=3.9.0",
+  "rich>=13.0.0",
+  "python-dotenv>=1.0.0",
+  "schedule>=1.2.0",
+  "sqlalchemy>=2.0.0",
+  "colorama>=0.4.6",
+  "tabulate>=0.9.0",
+  "Flask>=2.3.2",
+]
+
+[project.scripts]
+apex-scanner = "apex_scanner.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apex_scanner", "scanner", "scanner.*"]
+
+[tool.setuptools.package-data]
+"apex_scanner" = ["templates/*"]

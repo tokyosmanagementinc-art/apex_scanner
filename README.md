@@ -10,6 +10,35 @@ python main.py dashboard
 
 This starts the web dashboard on the first free port beginning at `8000`.
 
+## Installable application
+
+Install locally from the repository root:
+
+```bash
+python -m pip install .
+```
+
+Run the installed CLI app:
+
+```bash
+apex-scanner
+```
+
+Build a distributable wheel:
+
+```bash
+python -m pip install --upgrade build
+python -m build
+```
+
+Install the generated wheel from `dist/`:
+
+```bash
+python -m pip install dist/apex_scanner-0.1.0-py3-none-any.whl
+```
+
+A wheel package makes the project easier to distribute and install on other machines.
+
 ## Commands
 
 ### Dashboard

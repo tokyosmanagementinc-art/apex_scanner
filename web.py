@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import socket
 from typing import Optional
 
@@ -115,64 +116,10 @@ def health():
         "selected_setup_type": setup_type or state.get("setup_type") or "day",
         "current_market_session": get_market_session(),
     }
-
-
-@app.route("/set_session", methods=["GET"])
-def set_session():
-    requested = request.args.get("session")
-    try:
-        set_forced_session(requested)
-        return jsonify({"ok": True, "session": requested}), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-@app.route("/set_setup_type", methods=["GET"])
-def set_setup_type():
-    requested = request.args.get("setup_type")
-    try:
-        set_forced_setup_type(requested)
-        return jsonify({"ok": True, "setup_type": requested}), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-def init_scanner_daemon(use_process: bool = True) -> None:
-    """Initialize background scanner. By default starts as a separate process.
-    Pass `use_process=False` to run scanner in a thread within this process (logs visible here).
-    """
-    init_scanner_daemon_with_session(use_process=use_process, session=None)
-
-
-def init_scanner_daemon_with_session(use_process: bool = True, session: Optional[str] = None, setup_type: Optional[str] = None) -> None:
-    """Initialize background scanner and optionally force a session.
-    If `session` is provided it must be one of `SESSION_TYPES`.
-    """
-    # Apply forced session override if requested
-    try:
-        set_forced_session(session)
-    except Exception:
-        # invalid session — ignore and continue with automatic detection
-        set_forced_session(None)
-
-    try:
-        set_forced_setup_type(setup_type)
-    except Exception:
-        set_forced_setup_type(None)
-
-    if use_process:
-        start_background_scanner()
-    else:
-        # start in-process thread for easier debugging and visible logs
-        try:
-            start_background_scanner_thread()
-        except Exception:
-            # fall back to process if thread starter not available
-            start_background_scanner()
+from apex_scanner.web import app, init_scanner_daemon
 
 
 if __name__ == "__main__":
     init_scanner_daemon()
-    port = find_free_port(8000)
-    logger.info(f"Starting web dashboard on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=False)
+        set_forced_session(requested)

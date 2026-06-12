@@ -27,17 +27,17 @@ from scanner.config import CONFIG
 
 # Lazy imports for plotting
 try:
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    import pyqtgraph as pg
+    from pyqtgraph import PlotWidget
     import yfinance as yf
 except Exception:
-    Figure = None
-    FigureCanvas = None
+    pg = None
+    PlotWidget = None
     yf = None
 
 
 class DetailsDialog(QDialog):
-    """Dialog that shows details and a live-updating price chart."""
+    """Dialog that shows details and a live-updating price chart using pyqtgraph."""
     def __init__(self, parent, symbol, details, refresh_interval=30):
         super().__init__(parent)
         self.setWindowTitle(f"Details — {symbol}")
@@ -51,23 +51,26 @@ class DetailsDialog(QDialog):
             form.addRow(QLabel(str(k)), QLabel(str(v)))
         self.layout.addLayout(form)
 
-        self.canvas = None
-        self.line = None
+        self.plot_widget = None
+        self.plot_curve = None
 
-        if Figure is not None and FigureCanvas is not None and yf is not None:
-            fig = Figure(figsize=(6, 3))
-            self.ax = fig.add_subplot(111)
-            self.ax.set_title(f"{symbol} — Live Close Price")
-            self.ax.grid(alpha=0.3)
-            self.canvas = FigureCanvas(fig)
-            self.layout.addWidget(self.canvas)
-            # initial plot
-            self._last_index = None
-            self.update_plot(initial=True)
-            # timer for live updates
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self.update_plot)
-            self.timer.start(self.refresh_interval * 1000)
+        if pg is not None and PlotWidget is not None and yf is not None:
+            try:
+                self.plot_widget = PlotWidget()
+                self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+                self.plot_widget.setBackground('#ffffff')
+                self.plot_curve = self.plot_widget.plot([], [], pen=pg.mkPen('#1f77b4', width=2))
+                self.layout.addWidget(self.plot_widget)
+
+                # initial plot
+                self.update_plot()
+
+                # timer for live updates
+                self.timer = QTimer(self)
+                self.timer.timeout.connect(self.update_plot)
+                self.timer.start(self.refresh_interval * 1000)
+            except Exception:
+                self.layout.addWidget(QLabel("Live chart not available (plot init failed)."))
         else:
             self.layout.addWidget(QLabel("Live chart not available (missing libs)."))
 
@@ -76,37 +79,28 @@ class DetailsDialog(QDialog):
         self.layout.addWidget(buttons)
         self.setLayout(self.layout)
 
-    def update_plot(self, initial=False):
+    def update_plot(self):
         try:
-            # Try to fetch recent intraday data; fall back to daily
+            # Try intraday 1m first, fallback to daily
             data = None
             try:
                 data = yf.Ticker(self.symbol).history(period="7d", interval="1m")
             except Exception:
                 data = yf.Ticker(self.symbol).history(period="3mo", interval="1d")
 
-            if data is None or data.empty:
+            if data is None or data.empty or self.plot_widget is None:
                 return
 
-            x = data.index
+            x = data.index.astype('datetime64[ms]').astype('int64')
             y = data["Close"].values
 
-            if self.canvas is None:
-                return
-
-            if self.line is None:
-                self.line, = self.ax.plot(x, y, color="#1f77b4", lw=1.5)
-                self.ax.set_xlim(x[0], x[-1])
-            else:
-                self.line.set_data(x, y)
-                self.ax.set_xlim(x[0], x[-1])
-                ymin, ymax = min(y), max(y)
-                self.ax.set_ylim(ymin * 0.995, ymax * 1.005)
-
-            # redraw canvas
-            self.canvas.draw_idle()
+            # pyqtgraph prefers numeric x; convert to timestamps
+            self.plot_curve.setData(x, y)
+            # set axis range
+            self.plot_widget.setXRange(x[0], x[-1], padding=0.01)
+            ymin, ymax = float(min(y)), float(max(y))
+            self.plot_widget.setYRange(ymin * 0.995, ymax * 1.005, padding=0)
         except Exception:
-            # fail silently — live chart is best-effort
             pass
 
 

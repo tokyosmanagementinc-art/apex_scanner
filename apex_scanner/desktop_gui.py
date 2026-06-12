@@ -36,6 +36,81 @@ except Exception:
     yf = None
 
 
+class DetailsDialog(QDialog):
+    """Dialog that shows details and a live-updating price chart."""
+    def __init__(self, parent, symbol, details, refresh_interval=30):
+        super().__init__(parent)
+        self.setWindowTitle(f"Details — {symbol}")
+        self.symbol = symbol
+        self.details = details or {}
+        self.refresh_interval = refresh_interval
+
+        self.layout = QVBoxLayout()
+        form = QFormLayout()
+        for k, v in (self.details.items() if isinstance(self.details, dict) else []):
+            form.addRow(QLabel(str(k)), QLabel(str(v)))
+        self.layout.addLayout(form)
+
+        self.canvas = None
+        self.line = None
+
+        if Figure is not None and FigureCanvas is not None and yf is not None:
+            fig = Figure(figsize=(6, 3))
+            self.ax = fig.add_subplot(111)
+            self.ax.set_title(f"{symbol} — Live Close Price")
+            self.ax.grid(alpha=0.3)
+            self.canvas = FigureCanvas(fig)
+            self.layout.addWidget(self.canvas)
+            # initial plot
+            self._last_index = None
+            self.update_plot(initial=True)
+            # timer for live updates
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.update_plot)
+            self.timer.start(self.refresh_interval * 1000)
+        else:
+            self.layout.addWidget(QLabel("Live chart not available (missing libs)."))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        self.layout.addWidget(buttons)
+        self.setLayout(self.layout)
+
+    def update_plot(self, initial=False):
+        try:
+            # Try to fetch recent intraday data; fall back to daily
+            data = None
+            try:
+                data = yf.Ticker(self.symbol).history(period="7d", interval="1m")
+            except Exception:
+                data = yf.Ticker(self.symbol).history(period="3mo", interval="1d")
+
+            if data is None or data.empty:
+                return
+
+            x = data.index
+            y = data["Close"].values
+
+            if self.canvas is None:
+                return
+
+            if self.line is None:
+                self.line, = self.ax.plot(x, y, color="#1f77b4", lw=1.5)
+                self.ax.set_xlim(x[0], x[-1])
+            else:
+                self.line.set_data(x, y)
+                self.ax.set_xlim(x[0], x[-1])
+                ymin, ymax = min(y), max(y)
+                self.ax.set_ylim(ymin * 0.995, ymax * 1.005)
+
+            # redraw canvas
+            self.canvas.draw_idle()
+        except Exception:
+            # fail silently — live chart is best-effort
+            pass
+
+
+
 class ScannerSignals(QObject):
     """Signals for thread-safe GUI updates."""
     state_updated = pyqtSignal(dict)
@@ -273,34 +348,7 @@ class APEXScannerGUI(QMainWindow):
             if details is None:
                 details = {"symbol": symbol, "info": "Not found in cache"}
 
-            dlg = QDialog(self)
-            dlg.setWindowTitle(f"Details — {symbol}")
-            dlg_layout = QVBoxLayout()
-            form = QFormLayout()
-            for k, v in details.items():
-                form.addRow(QLabel(str(k)), QLabel(str(v)))
-            dlg_layout.addLayout(form)
-            # If plotting libs are available, fetch recent price history and show chart
-            if Figure is not None and yf is not None:
-                try:
-                    hist = yf.Ticker(symbol).history(period="3mo", interval="1d")
-                    if not hist.empty:
-                        fig = Figure(figsize=(6, 3))
-                        ax = fig.add_subplot(111)
-                        ax.plot(hist.index, hist["Close"], color="#1f77b4", lw=1.5)
-                        ax.set_title(f"{symbol} — Close Price (3 months)")
-                        ax.set_xlabel("")
-                        ax.grid(alpha=0.3)
-                        canvas = FigureCanvas(fig)
-                        dlg_layout.addWidget(canvas)
-                except Exception:
-                    # ignore plotting errors and continue with dialog
-                    pass
-
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok)
-            buttons.accepted.connect(dlg.accept)
-            dlg_layout.addWidget(buttons)
-            dlg.setLayout(dlg_layout)
+            dlg = DetailsDialog(self, symbol, details, refresh_interval=30)
             dlg.exec_()
         except Exception as e:
             self.statusBar().showMessage(f"Error showing details: {e}")

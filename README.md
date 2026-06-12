@@ -2,6 +2,33 @@
 
 A lightweight stock scanner that runs an automated market scan and serves a live dashboard via Flask.
 
+## 📥 Download & Run (macOS)
+
+**Easiest way to run — no coding required!**
+
+### For macOS Users
+
+1. **Download** `ApexScanner.dmg` from the `dist/` folder in this repository
+2. **Mount** the DMG (double-click)
+3. **Drag** `ApexScanner.app` to `/Applications`
+4. **Launch** the app (double-click `/Applications/ApexScanner.app`)
+
+**Note:** On first launch, macOS may warn "ApexScanner can't be opened because it's from an unidentified developer." To allow it:
+- Click **System Preferences** → **Security & Privacy** → **General** → **Open Anyway**, or
+- Run in Terminal:
+```bash
+xattr -d com.apple.quarantine /Applications/ApexScanner.app
+open /Applications/ApexScanner.app
+```
+
+### Prebuilt Artifacts
+
+- **`dist/ApexScanner.dmg`** — Ready-to-run macOS app (≈32 MB)
+- **`dist/apex-scanner`** — CLI binary for terminal use
+- **`dist/apex_scanner-0.1.0-py3-none-any.whl`** — Python wheel (`pip install`)
+
+---
+
 ## Quick start
 
 ```bash
